@@ -1,8 +1,13 @@
+import 'dart:io';
+import 'dart:convert';
+
 import 'package:mongo_dart/mongo_dart.dart';
 
 import 'package:dart_mongo/dart_mongo.dart' as dart_mongo;
 
 main(List<String> arguments) async {
+  int port = 8085;
+  var server = await HttpServer.bind('localhost', port);
   Db db = Db('mongodb://localhost:27017/test');
   await db.open();
 
@@ -10,41 +15,63 @@ main(List<String> arguments) async {
 
   DbCollection coll = db.collection('people');
 
-  // Read people
-  // var people = await coll.find().toList();
-  var people = await coll.find(where.limit(5)).toList();
-  print(people);
+  server.listen((HttpRequest request) async {
+    switch (request.uri.path) {
+      case '/':
+        request.response
+          ..write('Hello, World!')
+          ..close();
+        break;
+      case '/people':
 
-  var person = await coll
-      // .findOne(where.match('first_name', 'B').and(where.gt('id', 40)));
-      // .findOne(where.match('first_name', 'B').gt('id', 40));
-      .findOne(where.jsQuery('''
-      return this.first_name.startsWith('B') && this.id > 40;
-      '''));
-  print(person);
+        // Handle GET request
+        if (request.method == 'GET') {
+          request.response.write(await coll.find().toList());
+        }
+        // Handle POST request
+        else if (request.method == 'POST') {
+          var content = await request.transform(Utf8Decoder()).join();
+          var document = json.decode(content);
+          await coll.save(document);
+        }
+        // Handle PUT request
+        else if (request.method == 'PUT') {
+          var id = int.parse(request.uri.queryParameters['id']);
+          var content = await request.transform(Utf8Decoder()).join();
+          var document = json.decode(content);
+          var itemToReplace = await coll.findOne(where.eq('id', id));
 
-  // Create person
-  await coll.save({
-    'id': 101,
-    'first_name': 'Jermaine',
-    "last_name": "Gippes",
-    "email": "cgippes2r@xinhuanet.com",
-    "gender": "Female",
-    "ip_address": "97.252.84.122"
+          if (itemToReplace == null) {
+            await coll.save(document);
+          } else {
+            await coll.update(itemToReplace, document);
+          }
+        }
+        // Handle DELETE request
+        else if (request.method == 'DELETE') {
+          var id = int.parse(request.uri.queryParameters['id']);
+          var itemToDelete = await coll.findOne(where.eq('id', id));
+          await coll.remove(itemToDelete);
+        }
+        // Handle PATCH request
+        else if (request.method == 'PATCH') {
+          var id = int.parse(request.uri.queryParameters['id']);
+          var content = await request.transform(Utf8Decoder()).join();
+          var document = json.decode(content);
+          var itemToPatch = await coll.findOne(where.eq('id', id));
+          await coll.update(itemToPatch, {
+            r'$set': document,
+          });
+        }
+        await request.response.close();
+        break;
+      default:
+        request.response
+          ..statusCode = HttpStatus.notFound
+          ..write('Not Found');
+        await request.response.close();
+    }
   });
-  print('Saved new person');
 
-  // Update person
-  await coll.update(await coll.findOne(where.eq('id', 101)), {
-    r'$set': {'gender': 'Male'}
-  });
-  print('Updated person');
-  print(await coll.findOne(where.eq('id', 101)));
-
-  // Delete person
-  await coll.remove(await coll.findOne(where.eq('id', 101)));
-  print('Deleted person');
-  print(await coll.findOne(where.eq('id', 101))); // null
-
-  await db.close();
+  print('Server listening at http://localhost:$port');
 }
