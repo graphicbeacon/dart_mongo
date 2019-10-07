@@ -8,7 +8,7 @@ environment:
   sdk: '>=2.1.0 <3.0.0'
 
 dependencies:
-  mongo_dart: ^0.3.4
+  mongo_dart: ^0.3.6
   http_server: ^0.9.8+1
 
 dev_dependencies:
